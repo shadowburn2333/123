@@ -1,22 +1,27 @@
 package com.example.myapplication;
 
+import android.Manifest;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.Bundle;
+import android.text.format.DateFormat;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.room.Room;
 
-import android.Manifest;
-import android.content.Context;
-import android.content.pm.PackageManager;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
-import android.os.Bundle;
-import android.os.Environment;
-import android.os.Handler;
-import android.widget.TextView;
-import android.widget.Toast;
+import com.example.myapplication.PowerEntity;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +29,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
-    private static final long LOCATION_UPDATE_INTERVAL = 30000; // 10 seconds
+    private static final long LOCATION_UPDATE_INTERVAL = 10000; // 10 seconds
 
     private TextView locationTextView;
     private LocationManager locationManager;
@@ -32,9 +37,9 @@ public class MainActivity extends AppCompatActivity {
     private RecyclerView recyclerView;
     private LocationAdapter locationAdapter;
     private List<String> locationList;
+    private List<String> powerList;
 
-    private Handler handler;
-    private AppDatabase appDatabase;
+    private MyDatabase myDatabase;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,14 +50,21 @@ public class MainActivity extends AppCompatActivity {
         recyclerView = findViewById(R.id.recyclerView);
 
         locationList = new ArrayList<>();
-        locationAdapter = new LocationAdapter(locationList);
+        powerList = new ArrayList<>();
+        locationAdapter = new LocationAdapter(locationList, powerList);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(locationAdapter);
 
         // 初始化 Room 数据库
-        appDatabase = Room.databaseBuilder(getApplicationContext(),
-                        AppDatabase.class, "location_database")
+        myDatabase = Room.databaseBuilder(getApplicationContext(),
+                        MyDatabase.class, "my_database")
                 .build();
+
+        // 注册电源广播接收器
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_POWER_CONNECTED);
+        filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+        registerReceiver(powerReceiver, filter);
 
         // Check for location permissions if targeting API level 23 or above
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
@@ -106,24 +118,10 @@ public class MainActivity extends AppCompatActivity {
         } catch (SecurityException e) {
             e.printStackTrace();
         }
-
-        // Schedule a new location update after every LOCATION_UPDATE_INTERVAL
-        handler = new Handler();
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListener, null);
-                } catch (SecurityException e) {
-                    e.printStackTrace();
-                }
-                handler.postDelayed(this, LOCATION_UPDATE_INTERVAL);
-            }
-        }, LOCATION_UPDATE_INTERVAL);
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED
@@ -139,7 +137,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Remove location updates and stop the handler when the activity is destroyed
+        // Remove location updates when the activity is destroyed
         if (locationManager != null && locationListener != null) {
             try {
                 locationManager.removeUpdates(locationListener);
@@ -148,19 +146,41 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        if (handler != null) {
-            handler.removeCallbacksAndMessages(null);
+        // 关闭 Room 数据库连接
+        if (myDatabase != null) {
+            myDatabase.close();
         }
 
-        // 关闭 Room 数据库连接
-        if (appDatabase != null) {
-            appDatabase.close();
-        }
+        // 注销电源广播接收器
+        unregisterReceiver(powerReceiver);
     }
 
     private void saveLocationToRoomDatabase(double latitude, double longitude) {
         // 创建 LocationEntity 实例并插入到数据库中
         LocationEntity locationEntity = new LocationEntity(latitude, longitude);
-        new Thread(() -> appDatabase.locationDao().insertLocation(locationEntity)).start();
+        new Thread(() -> myDatabase.locationDao().insertLocation(locationEntity)).start();
+    }
+
+    private BroadcastReceiver powerReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction() != null) {
+                String action = intent.getAction();
+                long timestamp = System.currentTimeMillis();
+                String formattedTime = DateFormat.format("yyyy-MM-dd HH:mm:ss", timestamp).toString();
+                String message = formattedTime + " " + (Intent.ACTION_POWER_CONNECTED.equals(action) ? "plugin" : "plugout");
+                powerList.add(message);
+                locationAdapter.notifyDataSetChanged();
+
+                // Save the power action to Room database
+                savePowerToRoomDatabase(timestamp, action);
+            }
+        }
+    };
+
+    private void savePowerToRoomDatabase(long timestamp, String action) {
+        // 创建 PowerEntity 实例并插入到数据库中
+        PowerEntity powerEntity = new PowerEntity(timestamp, action);
+        new Thread(() -> myDatabase.powerDao().insertPower(powerEntity)).start();
     }
 }

@@ -15,4 +15,3 @@ public interface LocationDao {
     @Query("SELECT * FROM location_table")
     List<LocationEntity> getAllLocations();
 }
-

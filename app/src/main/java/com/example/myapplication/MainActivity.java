@@ -21,7 +21,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.room.Room;
 
-import com.example.myapplication.PowerEntity;
+import com.example.myapplication.LocationEntity;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +29,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
-    private static final long LOCATION_UPDATE_INTERVAL = 10000; // 10 seconds
+    private static final long LOCATION_UPDATE_INTERVAL = 1000; // 10 seconds
 
     private TextView locationTextView;
     private LocationManager locationManager;

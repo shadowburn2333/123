@@ -1,4 +1,5 @@
 package com.example.myapplication;
+
 import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
@@ -14,9 +15,6 @@ public class LocationEntity {
 
     @ColumnInfo(name = "longitude")
     private double longitude;
-
-    // Constructors, getters, and setters
-    public LocationEntity() {}
 
     public LocationEntity(double latitude, double longitude) {
         this.latitude = latitude;

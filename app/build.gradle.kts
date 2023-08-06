@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -31,6 +32,7 @@ android {
 dependencies {
 
     implementation ("androidx.room:room-runtime:2.3.0")
+    implementation("com.google.firebase:firebase-firestore:24.7.0")
     annotationProcessor ("androidx.room:room-compiler:2.3.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.8.0")

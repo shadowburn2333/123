@@ -24,13 +24,18 @@ import androidx.room.Room;
 import com.example.myapplication.LocationEntity;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
+// 导入其他所需的包...
+import com.google.firebase.firestore.FirebaseFirestore; // 新添加的代码：导入Firebase Firestore包
 
 public class MainActivity extends AppCompatActivity {
 
+    // 其他成员变量...
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private static final long LOCATION_UPDATE_INTERVAL = 1000; // 10 seconds
-
     private TextView locationTextView;
     private LocationManager locationManager;
     private LocationListener locationListener;
@@ -38,8 +43,8 @@ public class MainActivity extends AppCompatActivity {
     private LocationAdapter locationAdapter;
     private List<String> locationList;
     private List<String> powerList;
-
     private MyDatabase myDatabase;
+    private FirebaseFirestore firestore; // 新添加的代码：声明Firebase Firestore实例
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,13 +65,16 @@ public class MainActivity extends AppCompatActivity {
                         MyDatabase.class, "my_database")
                 .build();
 
+        // 初始化FirebaseFirestore实例
+        firestore = FirebaseFirestore.getInstance(); // 新添加的代码：初始化Firebase Firestore实例
+
         // 注册电源广播接收器
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_POWER_CONNECTED);
         filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
         registerReceiver(powerReceiver, filter);
 
-        // Check for location permissions if targeting API level 23 or above
+        // 检查位置权限（如果目标API级别大于等于23）
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                     checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -75,11 +83,11 @@ public class MainActivity extends AppCompatActivity {
                         Manifest.permission.ACCESS_COARSE_LOCATION
                 }, LOCATION_PERMISSION_REQUEST_CODE);
             } else {
-                // Permission already granted, start listening for location updates
+                // 已获得权限，开始监听位置更新
                 startLocationUpdates();
             }
         } else {
-            // No need to request permissions for API level < 23
+            // API级别小于23，无需请求权限
             startLocationUpdates();
         }
     }
@@ -95,12 +103,12 @@ public class MainActivity extends AppCompatActivity {
                 String message = "Latitude: " + latitude + "\nLongitude: " + longitude;
                 locationTextView.setText(message);
 
-                // Add the location information to the list
+                // 添加位置信息到列表
                 locationList.add(message);
                 locationAdapter.notifyDataSetChanged();
 
-                // Save the location information to Room database
-                saveLocationToRoomDatabase(latitude, longitude);
+                // 保存位置信息到Firestore数据库
+                saveLocationToFirestore(latitude, longitude); // 新添加的代码：保存位置信息到Firestore数据库
             }
 
             @Override
@@ -126,10 +134,10 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED
                     && grantResults[1] == PackageManager.PERMISSION_GRANTED) {
-                // Permission granted, start listening for location updates
+                // 获得权限，开始监听位置更新
                 startLocationUpdates();
             } else {
-                Toast.makeText(this, "Location permission required", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "需要位置权限", Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -137,7 +145,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Remove location updates when the activity is destroyed
+        // 当Activity销毁时移除位置监听
         if (locationManager != null && locationListener != null) {
             try {
                 locationManager.removeUpdates(locationListener);
@@ -146,7 +154,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // 关闭 Room 数据库连接
+        // 关闭Room数据库连接
         if (myDatabase != null) {
             myDatabase.close();
         }
@@ -155,10 +163,24 @@ public class MainActivity extends AppCompatActivity {
         unregisterReceiver(powerReceiver);
     }
 
-    private void saveLocationToRoomDatabase(double latitude, double longitude) {
-        // 创建 LocationEntity 实例并插入到数据库中
-        LocationEntity locationEntity = new LocationEntity(latitude, longitude);
-        new Thread(() -> myDatabase.locationDao().insertLocation(locationEntity)).start();
+    // 新添加的代码：将位置信息保存到Firestore数据库
+    private void saveLocationToFirestore(double latitude, double longitude) {
+        // 创建一个包含位置信息的Map对象
+        Map<String, Object> locationData = new HashMap<>();
+        locationData.put("latitude", latitude);
+        locationData.put("longitude", longitude);
+        locationData.put("timestamp", System.currentTimeMillis());
+
+        firestore.collection("ProjectData")
+                .document("Location")
+                .collection("Locations")
+                .add(locationData)
+                .addOnSuccessListener(documentReference -> {
+                    // 成功！数据已保存到Firestore。
+                })
+                .addOnFailureListener(e -> {
+                    // 保存数据到Firestore失败。
+                });
     }
 
     private BroadcastReceiver powerReceiver = new BroadcastReceiver() {
@@ -168,19 +190,32 @@ public class MainActivity extends AppCompatActivity {
                 String action = intent.getAction();
                 long timestamp = System.currentTimeMillis();
                 String formattedTime = DateFormat.format("yyyy-MM-dd HH:mm:ss", timestamp).toString();
-                String message = formattedTime + " " + (Intent.ACTION_POWER_CONNECTED.equals(action) ? "plugin" : "plugout");
+                String message = formattedTime + " " + (Intent.ACTION_POWER_CONNECTED.equals(action) ? "plug-in" : "plug-out");
                 powerList.add(message);
                 locationAdapter.notifyDataSetChanged();
 
-                // Save the power action to Room database
-                savePowerToRoomDatabase(timestamp, action);
+                // 将电源事件保存到Firestore数据库
+                savePowerToFirestore(timestamp, action); // 新添加的代码：保存电源事件到Firestore数据库
             }
         }
     };
 
-    private void savePowerToRoomDatabase(long timestamp, String action) {
-        // 创建 PowerEntity 实例并插入到数据库中
-        PowerEntity powerEntity = new PowerEntity(timestamp, action);
-        new Thread(() -> myDatabase.powerDao().insertPower(powerEntity)).start();
+    // 新添加的代码：将电源事件保存到Firestore数据库
+    private void savePowerToFirestore(long timestamp, String action) {
+        // 创建一个包含电源事件信息的Map对象
+        Map<String, Object> powerData = new HashMap<>();
+        powerData.put("timestamp", timestamp);
+        powerData.put("action", action);
+
+        firestore.collection("ProjectData")
+                .document("Power")
+                .collection("PowerActions")
+                .add(powerData)
+                .addOnSuccessListener(documentReference -> {
+                    // 成功！数据已保存到Firestore。
+                })
+                .addOnFailureListener(e -> {
+                    // 保存数据到Firestore失败。
+                });
     }
 }
